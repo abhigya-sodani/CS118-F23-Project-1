@@ -144,14 +144,27 @@ void handle_request(struct server_app *app, int client_socket) {
 
     // TODO: Parse the header and extract essential fields, e.g. file name
     // Hint: if the requested path is "/" (root), default to index.html
-    char file_name[] = "index.html";
+    // Parse the header and extract essential fields, e.g., file name
+    char *token = strtok(request, " \t\n");
+    if (token != NULL && strcmp(token, "GET") == 0) {
+        // Extract the requested path
+        token = strtok(NULL, " \t\n");
+        if (token != NULL) {
+            // If the requested path is "/", default to index.html
+            const char *requested_path = (strcmp(token, "/") == 0) ? "/index.html" : token;
 
-    // TODO: Implement proxy and call the function under condition
-    // specified in the spec
-    // if (need_proxy(...)) {
-    //    proxy_remote_file(app, client_socket, file_name);
-    // } else {
-    serve_local_file(client_socket, file_name);
+            // TODO: Implement proxy and call the function under condition
+            // specified in the spec
+            // if (need_proxy(requested_path)) {
+            //     proxy_remote_file(app, client_socket, requested_path);
+            // } else {
+            serve_local_file(client_socket, requested_path);
+            // }
+        }
+    }
+
+    // Free dynamically allocated memory
+    free(request);
     //}
 }
 
@@ -167,12 +180,86 @@ void serve_local_file(int client_socket, const char *path) {
     // (When the requested file does not exist):
     // * Generate a correct response
 
-    char response[] = "HTTP/1.0 200 OK\r\n"
-                      "Content-Type: text/plain; charset=UTF-8\r\n"
-                      "Content-Length: 15\r\n"
-                      "\r\n"
-                      "Sample response";
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        // If the file does not exist, generate a correct response
+        char not_found_response[] = "HTTP/1.0 404 Not Found\r\n"
+                                    "Content-Type: text/plain; charset=UTF-8\r\n"
+                                    "Content-Length: 13\r\n"
+                                    "\r\n"
+                                    "File Not Found";
 
+        send(client_socket, not_found_response, strlen(not_found_response), 0);
+        return;
+    }
+
+    // Determine the file type based on the file extension
+    const char *file_extension = strrchr(path, '.');
+    if (file_extension == NULL) {
+        // Invalid file, send a response
+        char invalid_file_response[] = "HTTP/1.0 400 Bad Request\r\n"
+                                       "Content-Type: text/plain; charset=UTF-8\r\n"
+                                       "Content-Length: 16\r\n"
+                                       "\r\n"
+                                       "Invalid Request";
+
+        send(client_socket, invalid_file_response, strlen(invalid_file_response), 0);
+        fclose(file);
+        return;
+    }
+
+    // Check if the file type is supported
+    
+
+    // Get the file size
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    char headers[1024];  // Adjust the buffer size as needed
+    if(strcmp(file_extension, ".html")==0){
+        snprintf(headers, sizeof(headers), "HTTP/1.0 200 OK\r\n"
+                                       "Content-Type: text/html\r\n"
+                                       "Content-Length: %ld\r\n"
+                                       "\r\n", file_size);
+
+    }
+    if(strcmp(file_extension, ".txt")==0){
+        snprintf(headers, sizeof(headers), "HTTP/1.0 200 OK\r\n"
+                                       "Content-Type: text/plain; charset=UTF-8\r\n"
+                                       "Content-Length: %ld\r\n"
+                                       "\r\n", file_size);
+    }
+    if(strcmp(file_extension, ".jpg")==0){
+        snprintf(headers, sizeof(headers), "HTTP/1.0 200 OK\r\n"
+                                       "Content-Type: image/jpeg\r\n"
+                                       "Content-Length: %ld\r\n"
+                                       "\r\n", file_size);
+    }
+
+    if (strcmp(file_extension, ".html") != 0 &&
+        strcmp(file_extension, ".txt") != 0 &&
+        strcmp(file_extension, ".jpg") != 0) {
+        snprintf(headers, sizeof(headers), "HTTP/1.0 200 OK\r\n"
+                                          "Content-Type: application/octet-stream; charset=UTF-8\r\n"
+                                          "Content-Length: %ld\r\n"
+                                          "\r\n", file_size);
+    }
+    // Build proper response headers
+    
+    
+    // Send response headers
+    send(client_socket, headers, strlen(headers), 0);
+
+    // Send file content in chunks
+    char buffer[1024];  // Adjust the buffer size as needed
+    size_t bytesRead;
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        send(client_socket, buffer, bytesRead, 0);
+    }
+
+    // Close the file
+    fclose(file);
     send(client_socket, response, strlen(response), 0);
 }
 
